@@ -1212,14 +1212,14 @@ function freqLabel(goal) {
   return goal + '×/mo';
 }
 function setTheme(t) {
-  state.theme = t; save(); applyTheme(); render();
+  state.theme = t; save(); applyTheme(); render(true);
 }
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', state.theme);
   var meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', state.theme === 'dark' ? '#1a1a1a' : '#f5f5f0');
 }
-function schedKind(k) { ui.schedEditKind = k; render(); }
+function schedKind(k) { ui.schedEditKind = k; render(true); }
 /* --- habit editor modal --- */
 function editHabit(id) {
   var hb = id ? habitById(id) : null;
@@ -1256,12 +1256,12 @@ function saveHabit(id) {
   } else {
     state.habits.push({ id: 'h' + state.nextId++, name: name, cat: cat, sub: sub, time: time, goal: goal, archived: false });
   }
-  save(); closeModal(); render();
+  save(); closeModal(); render(true);
 }
 function archiveHabit(id) {
   var hb = habitById(id);
   hb.archived = !hb.archived;
-  save(); closeModal(); render();
+  save(); closeModal(); render(true);
 }
 /* --- drag reorder --- */
 function bindDrag() {
@@ -1325,11 +1325,11 @@ function saveTask(hr, ti) {
   var ts = state.sched[kind][hr];
   if (ti >= 0) { ts[ti].name = name; ts[ti].parent = parent; }
   else ts.push({ id: 't' + state.nextTid++, name: name, parent: parent });
-  save(); closeModal(); render();
+  save(); closeModal(); render(true);
 }
 function delTask(hr, ti) {
   state.sched[ui.schedEditKind][hr].splice(ti, 1);
-  save(); closeModal(); render();
+  save(); closeModal(); render(true);
 }
 function dupHour(hr) {
   var opts = '';
@@ -1346,7 +1346,7 @@ function doDupHour(hr) {
   state.sched[kind][target] = (state.sched[kind][hr] || []).map(function(t) {
     return { id: 't' + state.nextTid++, name: t.name, parent: t.parent };
   });
-  save(); closeModal(); render();
+  save(); closeModal(); render(true);
   showToast('Copied to ' + hourLabel(target));
 }
 function dupSched() {
@@ -1359,7 +1359,7 @@ function dupSched() {
     });
   }
   state.sched[to] = out;
-  save(); render();
+  save(); render(true);
   showToast('Schedule duplicated');
 }
 /* ============ IMPORT / EXPORT ============ */
