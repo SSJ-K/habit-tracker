@@ -630,14 +630,24 @@ function renderTabs() {
   }).join('');
 }
 function goTab(t) { ui.tab = t; render(); }
-function render() {
+function render(keepScroll) {
   renderTabs();
   var c = document.getElementById('content');
+  var prevTop = c.scrollTop;
+  var prevCr = c.querySelector('.chip-row');
+  var prevCrLeft = prevCr ? prevCr.scrollLeft : null;
   if (ui.tab === 'today') c.innerHTML = vToday();
   else if (ui.tab === 'sched') c.innerHTML = vSched();
   else if (ui.tab === 'hist') c.innerHTML = vHist();
   else if (ui.tab === 'dash') c.innerHTML = vDash();
   else c.innerHTML = vSet();
+  if (keepScroll) {
+    c.scrollTop = prevTop;
+    var cr2 = c.querySelector('.chip-row');
+    if (cr2 && prevCrLeft !== null) cr2.scrollLeft = prevCrLeft;
+    if (ui.tab === 'set') bindDrag();
+    return;
+  }
   c.scrollTop = 0;
   if (ui.tab === 'today' || ui.tab === 'sched') {
     var cr = c.querySelector('.chip-row');
@@ -733,12 +743,12 @@ function vToday() {
 function selDay(k) { ui.selDate = k; render(); }
 function tapHabit(dk, hid) {
   setStatus(dk, hid, cycle(getStatus(dk, hid)));
-  render();
+  render(true);
 }
 function tapHourTask(dk, hr, tid) {
   var v = cycle(getHStatus(dk, hr, tid));
   setHStatus(dk, hr, tid, v);
-  render();
+  render(true);
   if (v === 1) {
     // find task's parent
     var sched = schedFor(dk);
@@ -748,7 +758,7 @@ function tapHourTask(dk, hr, tid) {
       if (p && !p.archived && getStatus(dk, p.id) !== 1) {
         showToast('Mark <b>' + esc(p.name) + '</b> done for today?', 'Mark done', function() {
           setStatus(dk, p.id, 1);
-          render();
+          render(true);
         });
       }
     }
@@ -916,7 +926,7 @@ function histWeekNav(n) {
 }
 function tapCell(k, hid) {
   setStatus(k, hid, cycle(getStatus(k, hid)));
-  render();
+  render(true);
 }
 function vHistMonth() {
   var hs = activeHabits();
