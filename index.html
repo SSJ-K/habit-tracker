@@ -449,11 +449,56 @@ function seedState() {
   };
 }
 /* ============ STATE ============ */
+function repairState(s) {
+  // Validate + fill any missing/broken parts of a loaded or imported state
+  // so a partial backup or corrupted save can never blank the app.
+  if (!s || typeof s !== 'object' || !Array.isArray(s.habits)) return null;
+  s.habits = s.habits.filter(function(h) { return h && h.id; });
+  if (!s.habits.length) return null;
+  s.habits.forEach(function(h) {
+    h.name = String(h.name == null ? '?' : h.name);
+    if (!h.cat) h.cat = 'SELF';
+    if (!h.sub) h.sub = '—';
+    if (typeof h.goal !== 'number' || !(h.goal > 0)) h.goal = 30;
+    if (typeof h.time !== 'string') h.time = '';
+    h.archived = !!h.archived;
+  });
+  if (!s.sched || typeof s.sched !== 'object') s.sched = { wd: {}, we: {} };
+  if (!s.sched.wd || typeof s.sched.wd !== 'object') s.sched.wd = {};
+  if (!s.sched.we || typeof s.sched.we !== 'object') s.sched.we = {};
+  if (!s.dayLog || typeof s.dayLog !== 'object') s.dayLog = {};
+  if (!s.hourLog || typeof s.hourLog !== 'object') s.hourLog = {};
+  if (s.theme !== 'dark') s.theme = 'light';
+  var hids = {};
+  s.habits.forEach(function(h) { hids[h.id] = true; });
+  var maxT = 0;
+  ['wd', 'we'].forEach(function(kind) {
+    var sch = s.sched[kind];
+    Object.keys(sch).forEach(function(hr) {
+      if (!Array.isArray(sch[hr])) { sch[hr] = []; return; }
+      sch[hr] = sch[hr].filter(function(t) { return t && t.id && t.name != null; });
+      sch[hr].forEach(function(t) {
+        t.name = String(t.name);
+        if (t.parent && !hids[t.parent]) t.parent = null;
+        var m = /^t(\d+)$/.exec(t.id);
+        if (m) maxT = Math.max(maxT, +m[1]);
+      });
+    });
+  });
+  var maxH = 0;
+  s.habits.forEach(function(h) {
+    var m = /^h(\d+)$/.exec(h.id);
+    if (m) maxH = Math.max(maxH, +m[1]);
+  });
+  if (typeof s.nextId !== 'number' || s.nextId <= maxH) s.nextId = maxH + 1;
+  if (typeof s.nextTid !== 'number' || s.nextTid <= maxT) s.nextTid = maxT + 1;
+  return s;
+}
 var state;
 try {
-  state = JSON.parse(localStorage.getItem(LS_KEY));
+  state = repairState(JSON.parse(localStorage.getItem(LS_KEY)));
 } catch (e) { state = null; }
-if (!state || !state.habits) state = seedState();
+if (!state) state = seedState();
 function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 var ui = {
   tab: 'today',
@@ -1181,7 +1226,8 @@ function editHabit(id) {
   var subs = [];
   state.habits.forEach(function(x) { if (subs.indexOf(x.sub) < 0) subs.push(x.sub); });
   var h = '<h2>' + (hb ? 'Edit habit' : 'New habit') + '</h2>' +
-    '<div class="form-group"><label class="form-label">Name</label><input class="form-input" id="f-name" value="' + (hb ? esc(hb.name) : '') + '"></div>' +
+    '<div class="form-group"><label class="form-label">Name</label><input class="form-input" id="f-name" value="' + (hb ? esc(hb.name) : '') + '">' +
+    (hb ? '<div class="muted" style="margin-top:6px">⚠ Renaming updates this habit everywhere — including all past logged days and history.</div>' : '') + '</div>' +
     '<div class="form-group"><label class="form-label">Category</label><select class="form-input" id="f-cat">' +
     Object.keys(CATS).map(function(c) { return '<option' + (hb && hb.cat === c ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select></div>' +
     '<div class="form-group"><label class="form-label">Subcategory</label><input class="form-input" id="f-sub" list="subs" value="' + (hb ? esc(hb.sub) : '') + '"><datalist id="subs">' +
@@ -1198,6 +1244,8 @@ function editHabit(id) {
 function saveHabit(id) {
   var name = document.getElementById('f-name').value.trim();
   if (!name) { showToast('Name required'); return; }
+  var dup = state.habits.some(function(x) { return x.id !== id && x.name.toUpperCase() === name.toUpperCase(); });
+  if (dup) { showToast('A habit named "' + esc(name) + '" already exists'); return; }
   var cat = document.getElementById('f-cat').value;
   var sub = document.getElementById('f-sub').value.trim() || '—';
   var goal = +document.getElementById('f-goal').value;
@@ -1380,8 +1428,8 @@ document.getElementById('file-json').addEventListener('change', function(e) {
   var r = new FileReader();
   r.onload = function() {
     try {
-      var obj = JSON.parse(r.result);
-      if (!obj.habits || !obj.dayLog) throw new Error('bad');
+      var obj = repairState(JSON.parse(r.result));
+      if (!obj) throw new Error('bad');
       state = obj; save(); applyTheme(); render();
       showToast('Backup restored');
     } catch (err) { showToast('Invalid backup file'); }
@@ -1453,8 +1501,19 @@ document.addEventListener('visibilitychange', function() {
   }
 });
 /* ============ INIT ============ */
-applyTheme();
-render();
+function __dlRaw() {
+  download('habit-tracker-raw-' + todayKey() + '.json', localStorage.getItem(LS_KEY) || JSON.stringify(state), 'application/json');
+}
+try {
+  applyTheme();
+  render();
+} catch (err) {
+  document.getElementById('content').innerHTML =
+    '<div class="card" style="margin-top:40px"><div class="card-title" style="color:var(--red)">Something went wrong while loading</div>' +
+    '<div class="muted" style="margin-bottom:10px">Error: ' + esc(err && err.message ? err.message : err) + '. Your saved data has not been touched — download it below before resetting.</div>' +
+    '<button class="btn secondary" onclick="__dlRaw()">Download raw data backup</button>' +
+    '<button class="btn danger" onclick="resetAll()">Reset all data</button></div>';
+}
 </script>
 </body>
 </html>
