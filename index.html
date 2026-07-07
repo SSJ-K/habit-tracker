@@ -639,9 +639,13 @@ function render() {
   else if (ui.tab === 'dash') c.innerHTML = vDash();
   else c.innerHTML = vSet();
   c.scrollTop = 0;
-  if (ui.tab === 'today') {
+  if (ui.tab === 'today' || ui.tab === 'sched') {
     var cr = c.querySelector('.chip-row');
-    if (cr) cr.scrollLeft = cr.scrollWidth;
+    if (cr) {
+      cr.scrollLeft = cr.scrollWidth;
+      var ac = cr.querySelector('.dchip.active');
+      if (ac && ac.offsetLeft < cr.scrollLeft) cr.scrollLeft = Math.max(0, ac.offsetLeft - 8);
+    }
   }
   if (ui.tab === 'sched') {
     var cur = document.getElementById('tl-cur');
@@ -663,6 +667,8 @@ function vToday() {
   h += '<div class="page-h"><h1>' + (isToday ? 'Today' : fmtDate(dk)) + '</h1><span class="page-sub">' + fmtDate(tk) + '</span></div>';
   // day switcher
   h += '<div class="chip-row">';
+  h += calChipBtn('sel');
+  h += oldDayChip(dk, tk, 'selDay');
   for (var i = 6; i >= 0; i--) {
     var k = addDays(tk, -i);
     var d = fromKey(k);
@@ -750,10 +756,27 @@ function tapHourTask(dk, hr, tid) {
 }
 /* ============ SCHEDULE TAB ============ */
 function vSched() {
-  var dk = todayKey();
+  var tk = todayKey();
+  if (!ui.schedDate) ui.schedDate = tk;
+  var dk = ui.schedDate;
+  var isToday = dk === tk;
   var sched = schedFor(dk);
   var curH = new Date().getHours();
   var h = '<div class="page-h"><h1>Schedule</h1><span class="page-sub">' + fmtDate(dk) + ' · ' + (isWeekendKey(dk) ? 'weekend' : 'weekday') + '</span></div>';
+  // day switcher
+  h += '<div class="chip-row">';
+  h += calChipBtn('sched');
+  h += oldDayChip(dk, tk, 'selSchedDay');
+  for (var i = 6; i >= 0; i--) {
+    var k = addDays(tk, -i);
+    var d = fromKey(k);
+    var hc = hourlyDayCount(k);
+    h += '<button class="dchip' + (k === dk ? ' active' : '') + '" onclick="selSchedDay(\'' + k + '\')">' +
+      '<div class="d1">' + (k === tk ? 'TODAY' : DOW[d.getDay()].toUpperCase()) + '</div>' +
+      '<div class="d2">' + d.getDate() + '</div>' +
+      '<div class="d3">' + hc.done + '/' + hc.total + '</div></button>';
+  }
+  h += '</div>';
   h += '<div class="card">';
   var gap = [];
   function flushGap() {
@@ -767,10 +790,10 @@ function vSched() {
     var tasks = sched[hr] || [];
     if (!tasks.length) { gap.push(hr); continue; }
     h += flushGap();
-    var isCur = hr === curH;
+    var isCur = isToday && hr === curH;
     // past-unlogged detection
     var anyLogged = tasks.some(function(t) { return getHStatus(dk, hr, t.id) !== null; });
-    var isPastUnlogged = hr < curH && !anyLogged;
+    var isPastUnlogged = (isToday ? hr < curH : true) && !anyLogged;
     h += '<div class="tl-hour' + (isCur ? ' cur" id="tl-cur' : '') + '">' +
       '<div class="tl-label">' + hourLabel(hr) + (isPastUnlogged ? '<span class="gap-dot" title="unlogged"></span>' : '') + '</div><div class="tl-tasks">';
     tasks.forEach(function(t) {
@@ -784,8 +807,73 @@ function vSched() {
   }
   h += flushGap();
   h += '</div>';
-  h += '<div class="muted" style="text-align:center;padding:4px 0 10px"><span class="gap-dot" style="margin:0 5px 0 0"></span>past hour with nothing logged — tap to backfill</div>';
+  h += '<div class="muted" style="text-align:center;padding:4px 0 10px"><span class="gap-dot" style="margin:0 5px 0 0"></span>' + (isToday ? 'past hour' : 'hour') + ' with nothing logged — tap to backfill</div>';
   return h;
+}
+function selSchedDay(k) { ui.schedDate = k; render(); }
+/* ============ DATE PICKER ============ */
+function calChipBtn(target) {
+  return '<button class="dchip" style="display:flex;align-items:center;justify-content:center;min-width:44px" onclick="openDatePicker(\'' + target + '\')" aria-label="Pick a date">' +
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 5V3M15 5V3"/></svg></button>';
+}
+function oldDayChip(dk, tk, fn) {
+  // extra chip when the selected date is older than the 7-day window
+  if (dk >= addDays(tk, -6)) return '';
+  var d = fromKey(dk);
+  return '<button class="dchip active" onclick="' + fn + '(\'' + dk + '\')">' +
+    '<div class="d1">' + MON[d.getMonth()].toUpperCase() + '</div>' +
+    '<div class="d2">' + d.getDate() + '</div>' +
+    '<div class="d3">' + DOW[d.getDay()] + '</div></button>';
+}
+function openDatePicker(target) {
+  var cur = target === 'sched' ? (ui.schedDate || todayKey()) : (ui.selDate || todayKey());
+  var d = fromKey(cur);
+  ui.pick = { target: target, y: d.getFullYear(), m: d.getMonth() };
+  renderPicker();
+}
+function renderPicker() {
+  var y = ui.pick.y, m = ui.pick.m, target = ui.pick.target;
+  var tk = todayKey();
+  var selK = target === 'sched' ? ui.schedDate : ui.selDate;
+  var days = new Date(y, m + 1, 0).getDate();
+  var first = new Date(y, m, 1).getDay();
+  var h = '<h2 style="display:flex;justify-content:space-between;align-items:center"><span>' + MON[m] + ' ' + y + '</span>' +
+    '<span class="nav-arrows"><button onclick="pickNav(-1)">‹</button><button onclick="pickNav(1)">›</button></span></h2>';
+  h += '<div class="cal-grid">';
+  'SMTWTFS'.split('').forEach(function(c) { h += '<div class="wk-dlabel">' + c + '</div>'; });
+  for (var i = 0; i < first; i++) h += '<div></div>';
+  for (var dd = 1; dd <= days; dd++) {
+    var k = y + '-' + pad(m + 1) + '-' + pad(dd);
+    var future = k > tk;
+    var isSel = k === selK;
+    var style = isSel ? 'background:var(--accent-light);outline:1.5px solid var(--accent)' : '';
+    // small completion hint
+    var hint = '·';
+    if (!future) {
+      if (target === 'sched') { var hc = hourlyDayCount(k); hint = hc.done ? hc.done : '·'; }
+      else { var sc = dayScore(k); hint = sc.done ? sc.done : '·'; }
+    }
+    h += '<div class="cal-cell' + (future ? ' future' : '') + '" style="' + style + '" ' +
+      (future ? '' : 'onclick="pickDay(\'' + k + '\')"') +
+      '><span class="dn">' + dd + '</span><span class="dv" style="font-size:11px;color:var(--text-secondary)">' + hint + '</span></div>';
+  }
+  h += '</div>';
+  h += '<button class="btn secondary" onclick="pickDay(\'' + tk + '\')">Jump to today</button>';
+  h += '<button class="btn secondary" onclick="closeModal()">Cancel</button>';
+  openModal(h);
+}
+function pickNav(n) {
+  var m = ui.pick.m + n, y = ui.pick.y;
+  if (m < 0) { m = 11; y--; }
+  if (m > 11) { m = 0; y++; }
+  ui.pick.m = m; ui.pick.y = y;
+  renderPicker();
+}
+function pickDay(k) {
+  if (ui.pick.target === 'sched') ui.schedDate = k;
+  else ui.selDate = k;
+  closeModal();
+  render();
 }
 /* ============ HISTORY TAB ============ */
 function vHist() {
@@ -1340,7 +1428,7 @@ setInterval(function() {
   var h = new Date().getHours(), d = todayKey();
   if (h !== lastHour || d !== lastDay) {
     lastHour = h;
-    if (d !== lastDay) { lastDay = d; ui.selDate = d; }
+    if (d !== lastDay) { lastDay = d; ui.selDate = d; ui.schedDate = d; }
     if (ui.tab === 'today' || ui.tab === 'sched') render();
   }
 }, 20000);
@@ -1349,7 +1437,7 @@ document.addEventListener('visibilitychange', function() {
     var h = new Date().getHours(), d = todayKey();
     if (h !== lastHour || d !== lastDay) {
       lastHour = h;
-      if (d !== lastDay) { lastDay = d; ui.selDate = d; }
+      if (d !== lastDay) { lastDay = d; ui.selDate = d; ui.schedDate = d; }
       if (ui.tab === 'today' || ui.tab === 'sched') render();
     }
   }
