@@ -501,7 +501,7 @@ try {
 if (!state) state = seedState();
 function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 var ui = {
-  tab: 'today',
+  tab: 'sched',
   selDate: null,           // Today tab selected date key
   histMode: 'week',
   histWeekEnd: null,       // date key of last day in week grid
@@ -674,10 +674,15 @@ function renderTabs() {
     return '<button class="tab' + (ui.tab === t[0] ? ' active' : '') + '" onclick="goTab(\'' + t[0] + '\')">' + t[2] + '<span>' + t[1] + '</span></button>';
   }).join('');
 }
-function goTab(t) { ui.tab = t; render(); }
+function goTab(t) { var chg = ui.tab !== t; ui.tab = t; render(!chg); }
+var __lastRenderedTab = null;
 function render(keepScroll) {
   renderTabs();
   var c = document.getElementById('content');
+  // Always keep scroll position when re-rendering the same tab;
+  // only reset/auto-scroll when actually switching tabs.
+  if (ui.tab === __lastRenderedTab) keepScroll = true;
+  __lastRenderedTab = ui.tab;
   var prevTop = c.scrollTop;
   var prevCr = c.querySelector('.chip-row');
   var prevCrLeft = prevCr ? prevCr.scrollLeft : null;
@@ -690,6 +695,8 @@ function render(keepScroll) {
     c.scrollTop = prevTop;
     var cr2 = c.querySelector('.chip-row');
     if (cr2 && prevCrLeft !== null) cr2.scrollLeft = prevCrLeft;
+    // Mobile browsers can shift scroll after keyboard/modal close — re-assert next frame.
+    requestAnimationFrame(function() { c.scrollTop = prevTop; });
     if (ui.tab === 'set') bindDrag();
     return;
   }
